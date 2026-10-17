@@ -46,6 +46,7 @@ Changes :
 ]]
 
 fintool = {}
+fintool.maxeff = 250
 
 function fintool.initialize_()
 	fintool.maxwind = 360
@@ -70,28 +71,33 @@ function fintool.think_()
 end
 hook.Add( "Think", "finthink_", fintool.think_ )
 
+-- Server console (NULL player) or an admin
+local function canConfigure(player)
+	return !IsValid(player) or player:IsAdmin() or player:IsSuperAdmin()
+end
+
 -- Min/Max delay
 function fintool.setmaxdelay(player, command, arg)
-	if player:IsAdmin() or player:IsSuperAdmin() then fintool.maxdelay = arg[1] end
+	if canConfigure(player) then fintool.maxdelay = tonumber(arg[1]) or 120 end
 end 
 concommand.Add("fintool_setmaxwinddelay",fintool.setmaxdelay)
 
 -- Min/Max wind
 function fintool.setmaxwind(player, command, arg)
-	if player:IsAdmin() or player:IsSuperAdmin() then fintool.maxwind = arg[1] or 360 end
+	if canConfigure(player) then fintool.maxwind = tonumber(arg[1]) or 360 end
 end 
 
 concommand.Add("fintool_setmaxwind",fintool.setmaxwind)
 
 function fintool.setminwind(player, command, arg)
-	if player:IsAdmin() or player:IsSuperAdmin() then fintool.minwind = arg[1] or 0 end
+	if canConfigure(player) then fintool.minwind = tonumber(arg[1]) or 0 end
 end 
 
 concommand.Add("fintool_setminwind",fintool.setminwind)
 
 -- Max eff.
 function fintool.setmaxeff(player, command, arg)
-	if player:IsAdmin() or player:IsSuperAdmin() then fintool.maxeff = arg[1] end
+	if canConfigure(player) then fintool.maxeff = tonumber(arg[1]) or 250 end
 end 
 
 concommand.Add("fintool_setmaxeff", fintool.setmaxeff)

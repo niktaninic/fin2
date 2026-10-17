@@ -31,10 +31,14 @@ if SERVER then
 end
 
 -- Console Varibles
-CreateClientConVar("show_HUD_always", 0, true, false, "Show the HUD always or not (Fin II)")
+if CLIENT then
+    CreateClientConVar("show_HUD_always", 0, true, false, "Show the HUD always or not (Fin II)")
+    -- userinfo, so the server can read it from the fin's owner when the fin is removed
+    CreateClientConVar("fin2_delete_dup_onremove", 1, true, true, "Delete the duplication on remove or not (Fin II)")
+end
 
 -- Storing HUD settings for each Entity with Fin 2 applied to
-function networked(Entity, Data)
+local function networked(Entity, Data)
     Entity:SetNWBool("Active", true)
     Entity:SetNWFloat("efficency", Data.efficiency)
     if (Data.pos_ang_opt != nil) then Entity:SetNWString("pos_ang_opt", Data.pos_ang_opt) end
@@ -43,16 +47,16 @@ function networked(Entity, Data)
     Entity:SetNWFloat("wind", Data.wind)
     Entity:SetNWFloat("cline", Data.cline)
 end
-function networked_remove_partially(Entity)
+local function networked_remove_partially(Entity)
     Entity:SetNWBool("Active", true)
     Entity:SetNWFloat("efficency", -99)
-    Entity:GetNWString("pos_ang_opt", "-nil")
+    Entity:SetNWString("pos_ang_opt", "-nil")
     Entity:SetNWString("lift", "nil")
     Entity:SetNWFloat("pln", -99)
     Entity:SetNWFloat("wind", -99)
     Entity:SetNWFloat("cline", -99)
 end
-function networked_remove(Entity)
+local function networked_remove(Entity)
     Entity:SetNWBool("Active", false)
     Entity:SetNWFloat("efficency", -99999999)
     Entity:SetNWString("pos_ang_opt", "-nil")
@@ -64,7 +68,7 @@ end
 
 if CLIENT then
     -- Print screen
-    function showValuesFinHUD()
+    local function showValuesFinHUD()
         local Player   = LocalPlayer()
         local Entity   = Player:GetEyeTrace().Entity
         local Weapon   = Player:GetActiveWeapon()
@@ -233,7 +237,9 @@ function TOOL:LeftClick( trace )
     local cln         = self:GetClientNumber("cline")
     local pos_ang_opt = self:GetClientInfo("pos_ang_opt")
 	
-	if (trace.Entity.Fin2_Ent != nil) then
+	eff = Fin2ClampEfficiency(eff)
+
+	if IsValid(trace.Entity.Fin2_Ent) then
 		local Data = {
 			lift	        = lft,
 			pln		        = pln,
@@ -242,6 +248,12 @@ function TOOL:LeftClick( trace )
             efficiency      = eff,
             pos_ang_opt     = pos_ang_opt
 		}
+		-- Keep pos/ang of the existing fin in the dupe data, otherwise a pasted fin loses its orientation
+		local OldData = trace.Entity.EntityMods and trace.Entity.EntityMods.fin2
+		if OldData then
+			Data.pos = OldData.pos
+			Data.ang = OldData.ang
+		end
 		table.Merge(trace.Entity.Fin2_Ent:GetTable(), Data)
 		duplicator.StoreEntityModifier(trace.Entity, "fin2", Data)
         
@@ -282,9 +294,10 @@ function TOOL:LeftClick( trace )
 	
     -- Remove
 	undo.Create("fin_2")
+        local Entity = trace.Entity
         undo.AddFunction(function()
             -- Remove networked-settings for Entity
-            networked_remove(trace.Entity)
+            if IsValid(Entity) then networked_remove(Entity) end
         end)
         undo.AddEntity(fin)
         undo.SetPlayer(self:GetOwner())
@@ -295,7 +308,7 @@ end
 
 --Copy fin
 function TOOL:RightClick( trace )
-	if (trace.Entity.Fin2_Ent != nil) then
+	if IsValid(trace.Entity.Fin2_Ent) then
 		local fin = trace.Entity.Fin2_Ent
 		local ply = self:GetOwner()
 		ply:ConCommand("fin2_lift "..fin.lift)
@@ -309,7 +322,7 @@ function TOOL:RightClick( trace )
 end
 
 function TOOL:Reload( trace )
-    if (trace.Entity.Fin2_Ent != nil) then
+    if IsValid(trace.Entity.Fin2_Ent) then
         trace.Entity.Fin2_Ent:Remove()
 		trace.Entity.Fin2_Ent = nil
         -- Remove networked-settings for Entity
@@ -321,14 +334,25 @@ end
 
 
 if SERVER then
+	function Fin2ClampEfficiency(eff)
+		return math.Clamp(tonumber(eff) or 0, 0, tonumber(fintool and fintool.maxeff) or 250)
+	end
+
 	function MakeFin2Ent( Player, Entity, Data )
-		if !Data then return end
-		if !Player:CheckLimit("fin_2") then return false end
+		if !Data or !IsValid(Entity) then return end
+		if IsValid(Player) and !Player:CheckLimit("fin_2") then return false end
+		-- Fins updated by older versions were saved without pos/ang, place those relative to the prop
+		if !Data.ang then Data.ang = Angle(0, 0, 0) end
+		-- Applying a modifier again (e.g. on a re-paste) must not stack a second fin
+		if IsValid(Entity.Fin2_Ent) then Entity.Fin2_Ent:Remove() end
+
+		Data.efficiency = Fin2ClampEfficiency(Data.efficiency)
 
 		local fin = ents.Create( "fin_2" )
 			if (Data.pos != nil) then fin:SetPos(Entity:LocalToWorld(Data.pos)) end
 			fin:SetAngles(Entity:LocalToWorldAngles(Data.ang))
 			fin.ent			= Entity
+			fin.owner		= Player
             fin.efficiency  = Data.efficiency
             -- Old entities e.g. made with duplicate do not have this feature
             if (Data.pos_ang_opt != nil) then fin.pos_ang_opt = Data.pos_ang_opt end
@@ -345,8 +369,10 @@ if SERVER then
 		Entity.Fin2_Ent = fin
 
 		duplicator.StoreEntityModifier(Entity, "fin2", Data)
-		Player:AddCount("fin_2", fin)
-		Player:AddCleanup("fin_2", fin)
+		if IsValid(Player) then
+			Player:AddCount("fin_2", fin)
+			Player:AddCleanup("fin_2", fin)
+		end
         
         -- Access on server- and client-side
         networked(Entity, Data)
