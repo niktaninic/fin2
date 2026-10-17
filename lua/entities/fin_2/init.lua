@@ -3,22 +3,32 @@ AddCSLuaFile( "shared.lua" )
 
 include('shared.lua')
 
-CreateClientConVar("fin2_delete_dup_onremove", 1, true, false, "Delete the duplication on remove or not (Fin II)")
-
 function ENT:Initialize()
 	self.Entity:SetMoveType( MOVETYPE_NONE )                 
 end   
 
 function ENT:OnRemove()
-	if (GetConVar("fin2_delete_dup_onremove"):GetBool() == true) then
-		duplicator.ClearEntityModifier(self.Entity:GetParent(), "fin2")
-		self.Entity:GetParent().Fin2_Ent = nil
+	local parent = self.ent
+	if !IsValid(parent) then return end
+
+	-- Per-player client setting, read from whoever created the fin
+	local deleteDup = true
+	if IsValid(self.owner) then
+		deleteDup = self.owner:GetInfoNum("fin2_delete_dup_onremove", 1) != 0
+	end
+
+	if deleteDup then
+		duplicator.ClearEntityModifier(parent, "fin2")
+	end
+	if parent.Fin2_Ent == self.Entity then
+		parent.Fin2_Ent = nil
 	end
 end
 
  function ENT:Think()
+	if !IsValid(self.ent) then return end
 	local physobj = self.ent:GetPhysicsObject()
-	if !physobj:IsValid() then return end
+	if !IsValid(physobj) then return end
 	
 	local curvel = physobj:GetVelocity()
 	local curup = self:GetForward()
@@ -42,7 +52,9 @@ end
 		
 		finalvec = vec1:GetNormalized() * (math.pow(sped, modf) - 1)
 		finalvec = finalvec:GetNormalized()
-		finalvec = (finalvec * self.efficiency) + curvel
+		-- vec1 is curvel mirrored across the fin plane. Weighting it by more than |curvel| flips the normal
+		-- velocity every tick instead of just removing it, so the vehicle vibrates at high efficiency or low speed
+		finalvec = (finalvec * math.min(self.efficiency, sped)) + curvel
 	end
 	
 	if (self.lift != "lift_none") then
@@ -50,7 +62,7 @@ end
 			local liftmul = 1 - math.abs(nvec)
 			finalvec = finalvec + (curup * liftmul * curvel:Length() * self.efficiency) / 700
 		else
-			local liftmul = (nvec / math.abs(nvec)) - nvec
+			local liftmul = (nvec >= 0 and 1 or -1) - nvec -- nvec / abs(nvec) is NaN at 0
 			finalvec = finalvec + (curup * curvel:Length() * self.efficiency * liftmul) / 700
 		end
 	end
