@@ -52,7 +52,9 @@ end
 		
 		finalvec = vec1:GetNormalized() * (math.pow(sped, modf) - 1)
 		finalvec = finalvec:GetNormalized()
-		finalvec = (finalvec * self.efficiency) + curvel
+		-- vec1 is curvel mirrored across the fin plane. Weighting it by more than |curvel| flips the normal
+		-- velocity every tick instead of just removing it, so the vehicle vibrates at high efficiency or low speed
+		finalvec = (finalvec * math.min(self.efficiency, sped)) + curvel
 	end
 	
 	if (self.lift != "lift_none") then
